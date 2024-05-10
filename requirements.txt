@@ -1,0 +1,4 @@
+accelerate==0.30.0
+omegaconf
+wandb
+tqdm

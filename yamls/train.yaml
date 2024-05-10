@@ -1,0 +1,14 @@
+experiment_settings:
+  log: "wandb"
+  project: "test"
+
+training_settings:
+  epochs: 1000
+  learning_rate: 0.001
+  steplr_size: 100
+  steplr_gamma: 0.96
+  batch_size: 32
+
+save_settings:
+  model_save_path: "result"
+  checkpoint_path: "checkpoints/epoch={}"
