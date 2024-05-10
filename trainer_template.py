@@ -22,6 +22,7 @@ callbacks_whitelist = [
     "on_after_model",
     "on_checkpoint",
     "on_epoch_end",
+    "after_fit"
 ]
 
 
@@ -54,7 +55,6 @@ class Trainer:
         saveing_config: Optional[Union[DictConfig, ListConfig]],
         callbacks: Dict[str, Callable[..., None]] = {},
     ) -> None:
-        # setup the accelerator
         if Accelerator is None:
             raise ModuleNotFoundError('accelerate library is not installed')
         self.accelerator = accelerator
@@ -90,20 +90,15 @@ class Trainer:
         for sample_id, sample in enumerate(self.train_dataloader):
             sample = {"input": sample[0], "target": sample[1]}
             self.optimizer.zero_grad()
-
             sample = self.preprocess(sample)
             sample = self.augmentations(sample)
             sample = self.on_before_model(sample)
-
             output = self.on_model(self.model, sample)
             self.on_after_model(output, sample)
             loss = self.compute_loss(output, sample["target"])
-
             self.backward(loss)
             self.optimizer.step()
-
             loss = self.accelerator.reduce(loss, reduction='mean')
-
             self.global_step += 1
             if self.accelerator.is_main_process:
                 losses.update(loss.item(), len(sample["input"]))
@@ -119,13 +114,14 @@ class Trainer:
             self.fit_epoch(epoch)
             self.state = TrainerState.VALIDATE
             valid_stats = self.evaluate()
-            self.on_checkpoint(self.model, epoch, valid_stats)
+            self.on_checkpoint(self.model, epoch, self.accelerator,
+                               valid_stats)
             self.on_epoch_end()
             if self.state == TrainerState.TERMINATE:
                 break
             self.scheduler.step()
             bar.update(1)
-        self.after_fit()
+        self.after_fit(self.model, self.accelerator, valid_stats)
 
     @torch.no_grad()
     def evaluate(self) -> Dict[str, AverageMeter]:
@@ -133,20 +129,15 @@ class Trainer:
         stats = StatsTracker()
         for sample_id, sample in enumerate(self.valid_dataloader):
             sample = {"input": sample[0], "target": sample[1]}
-
             sample = self.preprocess(sample)
             sample = self.on_before_model(sample)
-
             out = self.on_model(self.model, sample)
             self.on_after_model(out, sample)
             batch_size: int = len(sample["input"])
             val_loss = self.compute_loss(out, sample["target"])
-
             val_loss = self.accelerator.reduce(val_loss, reduction='mean')
-
             targets = self.accelerator.gather_for_metrics(sample["target"])
             out = self.accelerator.gather_for_metrics(out)
-
             if self.accelerator.is_main_process:
                 stats.update_from_dict(self.compute_metrics(out, targets),
                                        batch_size)
@@ -190,10 +181,7 @@ class Trainer:
         ...
 
     def on_checkpoint(self, *args: Any, **kwargs: Dict[str, Any]) -> None:
-        model, epoch, valid_stats = args
-        if epoch == 1 or epoch % 10 == 0:
-            self.accelerator.save_state(
-                self.saveing_config['checkpoint_path'].format(epoch))
+        ...
 
     def on_epoch_end(self, *args: Any, **kwargs: Dict[str, Any]) -> None:
         ...

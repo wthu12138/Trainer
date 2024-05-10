@@ -50,7 +50,7 @@ class CustomTrainer(Trainer):
                          accelerator,
                          training_config,
                          saveing_config,
-                         callbacks={})
+                         callbacks)
 
     #redefine the fit method
     def after_fit(self, *args: Any, **kwargs: Dict[str, Any]):
@@ -166,4 +166,71 @@ accelerate test --config_file yamls/ccelerate.yaml
 
 ```bash
 accelerate launch --config_file yamls/accelerate.yaml train.py --file yamls/train.yaml
+```
+
+## Callback
+
+We can use callback functions in `callback.py`. You just change the initialization of the trainer, and the callback function would be called in the corresponding part in the training loop.
+Please make sure the callback funcations have the same params as the API in the trainer.
+
+
+
+In`callback.py`
+
+```python
+class SaveCheckpoint:
+    '''
+    every interval epochs save the model state to the path.
+    '''
+
+    def __init__(self, interval: int, path: Union[str, Path]):
+        self.interval = interval
+        self.path = path
+
+    def __call__(self, model: Module, epoch: int, accelerator: Accelerator,
+                 valid_stats: Dict[str, AverageMeter]):
+        if epoch == 1 or epoch % self.interval == 0:
+            path = self.path.format(epoch)
+            os.makedirs(path, exist_ok=True)
+            accelerator.save_state(path)
+
+
+class SaveModel:
+    '''
+    Save the model to the path.
+    '''
+
+    def __init__(self, path: Union[str, Path]):
+        self.path = path
+
+    def __call__(self, model: Module, accelerator: Accelerator,
+                 valid_stats: Dict[str, AverageMeter]):
+        unwrapped_model = accelerator.unwrap_model(model)
+        accelerator.save_model(unwrapped_model, self.path)
+```
+
+Initialize these 2 classes
+
+```python
+save_checkpoint = SaveCheckpoint(interval=2,
+                                  path=saving_config['checkpoint_path'])
+save_model = SaveModel(path=saving_config['model_save_path'])
+```
+
+Plug in
+
+```python
+trainer = CustomTrainer(model=model,
+                            train_dataloader=train_data_loader,
+                            valid_dataloader=valid_data_loader,
+                            criterion=mse_func,
+                            optimizer=optimizer,
+                            scheduler=scheduler,
+                            accelerator=accelerator,
+                            training_config=training_config,
+                            saveing_config=saving_config,
+                            callbacks={
+                                "on_checkpoint": save_checkpoint,
+                                'after_fit': save_model
+                            })
 ```

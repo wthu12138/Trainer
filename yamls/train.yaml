@@ -3,7 +3,7 @@ experiment_settings:
   project: "test"
 
 training_settings:
-  epochs: 1000
+  epochs: 100
   learning_rate: 0.001
   steplr_size: 100
   steplr_gamma: 0.96

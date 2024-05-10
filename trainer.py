@@ -1,12 +1,12 @@
 from trainer_template import Trainer
 from accelerate import Accelerator
-from typing import Dict, Any
 from torch.utils.data import DataLoader
 from model import ToyModel
 from dataset import ToyDataset
 from torch import optim
 from trainer_utils import get_args, load_config
 import torch
+from callback import SaveCheckpoint, SaveModel
 
 
 class CustomTrainer(Trainer):
@@ -22,24 +22,12 @@ class CustomTrainer(Trainer):
                  training_config,
                  saveing_config,
                  callbacks={}):
-        super().__init__(model,
-                         train_dataloader,
-                         valid_dataloader,
-                         criterion,
-                         optimizer,
-                         scheduler,
-                         accelerator,
-                         training_config,
-                         saveing_config,
-                         callbacks={})
-
-    #redefine the fit method
-    def after_fit(self, *args: Any, **kwargs: Dict[str, Any]):
-        self.accelerator.end_training()
-        self.accelerator.wait_for_everyone()
-        unwrapped_model = self.accelerator.unwrap_model(self.model)
-        self.accelerator.save_model(unwrapped_model,
-                                    self.saveing_config['model_save_path'])
+        super().__init__(model, train_dataloader, valid_dataloader, criterion,
+                         optimizer, scheduler, accelerator, training_config,
+                         saveing_config, callbacks)
+        '''
+        May change the training loop here, redefine the fit_epoch method
+        '''
 
 
 def main():
@@ -72,6 +60,11 @@ def main():
         step_size=training_config['steplr_size'],
         gamma=training_config['steplr_gamma'])
 
+    # Define the callbacks
+    save_checkpoint = SaveCheckpoint(interval=2,
+                                     path=saving_config['checkpoint_path'])
+    save_model = SaveModel(path=saving_config['model_save_path'])
+
     # Initialize the trainer
     trainer = CustomTrainer(model=model,
                             train_dataloader=train_data_loader,
@@ -81,7 +74,11 @@ def main():
                             scheduler=scheduler,
                             accelerator=accelerator,
                             training_config=training_config,
-                            saveing_config=saving_config)
+                            saveing_config=saving_config,
+                            callbacks={
+                                "on_checkpoint": save_checkpoint,
+                                'after_fit': save_model
+                            })
     #train the model
     trainer.fit()
 
